@@ -6,8 +6,12 @@
 
 """Incident Bridge incident-response environment."""
 
-from .client import IncidentBridgeEnv
-from .models import IncidentBridgeAction, IncidentBridgeObservation, IncidentBridgeState
+try:
+    from .client import IncidentBridgeEnv
+    from .models import IncidentBridgeAction, IncidentBridgeObservation, IncidentBridgeState
+except ImportError:
+    from client import IncidentBridgeEnv
+    from models import IncidentBridgeAction, IncidentBridgeObservation, IncidentBridgeState
 
 __all__ = [
     "IncidentBridgeAction",

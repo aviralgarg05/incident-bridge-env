@@ -74,7 +74,8 @@ def test_perfect_submissions_score_full_credit():
     for task_id in TASK_EXPECTATIONS:
         obs = _run_perfect_episode(task_id)
         assert obs.done is True
-        assert isclose(obs.score, 1.0, rel_tol=0, abs_tol=1e-6)
+        assert isclose(obs.score, 0.999, rel_tol=0, abs_tol=1e-6)
+        assert 0.0 < obs.score < 1.0
 
 
 def test_invalid_action_sets_last_action_error():

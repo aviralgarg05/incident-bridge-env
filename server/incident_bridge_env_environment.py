@@ -29,6 +29,7 @@ class IncidentBridgeEnvironment(Environment):
 
     SUPPORTS_CONCURRENT_SESSIONS: bool = True
     MAX_STEPS: int = 12
+    SCORE_EPSILON: float = 0.001
 
     def __init__(self):
         self._task_cursor = 0
@@ -46,6 +47,11 @@ class IncidentBridgeEnvironment(Environment):
         self._active_artifact_id: str | None = None
         self._submitted = False
         self._progress_score = 0.0
+
+    def _exposed_score(self, raw_score: float) -> float:
+        """Keep externally visible scores strictly inside (0, 1)."""
+
+        return min(max(raw_score, self.SCORE_EPSILON), 1.0 - self.SCORE_EPSILON)
 
     def reset(
         self,
@@ -65,7 +71,7 @@ class IncidentBridgeEnvironment(Environment):
             episode_id=episode_id or str(uuid4()),
             step_count=0,
             task_id=task_id,
-            progress_score=0.0,
+            progress_score=self._exposed_score(0.0),
             opened_artifacts=[],
             current_severity=None,
             current_mitigation=None,
@@ -207,7 +213,7 @@ class IncidentBridgeEnvironment(Environment):
         )
 
     def _sync_state(self) -> None:
-        self._state.progress_score = self._progress_score
+        self._state.progress_score = self._exposed_score(self._progress_score)
         self._state.opened_artifacts = list(self._opened_artifacts)
         self._state.current_severity = self._current_severity
         self._state.current_mitigation = self._current_mitigation
@@ -255,7 +261,7 @@ class IncidentBridgeEnvironment(Environment):
             current_mitigation=self._current_mitigation,
             current_update=self._current_update,
             steps_remaining=max(self.MAX_STEPS - self._state.step_count, 0),
-            score=self._progress_score,
+            score=self._exposed_score(self._progress_score),
             score_breakdown=breakdown,
             feedback=feedback,
             last_action_error=last_action_error,

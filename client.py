@@ -13,11 +13,14 @@ from typing import Dict
 from openenv.core import EnvClient
 from openenv.core.client_types import StepResult
 
-from .models import (
-    IncidentBridgeAction,
-    IncidentBridgeObservation,
-    IncidentBridgeState,
-)
+try:
+    from .models import (
+        IncidentBridgeAction,
+        IncidentBridgeObservation,
+        IncidentBridgeState,
+    )
+except ImportError:
+    from models import IncidentBridgeAction, IncidentBridgeObservation, IncidentBridgeState
 
 
 class IncidentBridgeEnv(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import textwrap
 from typing import Any, Dict, List
 
@@ -16,6 +17,10 @@ API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 HF_TOKEN = os.getenv("HF_TOKEN")
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
+SPACE_URL = os.getenv(
+    "OPENENV_SPACE_URL",
+    "https://aviralgarg-incident-bridge-env.hf.space",
+)
 
 BENCHMARK = "incident_bridge_env"
 TASK_IDS = [
@@ -292,9 +297,22 @@ async def main() -> None:
     if not HF_TOKEN:
         raise ValueError("HF_TOKEN environment variable is required")
 
-    image_name = LOCAL_IMAGE_NAME or "incident-bridge-env:latest"
     client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
-    env = await IncidentBridgeEnv.from_docker_image(image_name)
+    env: IncidentBridgeEnv
+
+    if LOCAL_IMAGE_NAME:
+        try:
+            env = await IncidentBridgeEnv.from_docker_image(LOCAL_IMAGE_NAME)
+        except Exception as exc:
+            print(
+                f"Local image startup failed for {LOCAL_IMAGE_NAME}: {exc}. Falling back to {SPACE_URL}.",
+                file=sys.stderr,
+            )
+            env = IncidentBridgeEnv(base_url=SPACE_URL)
+            await env.connect()
+    else:
+        env = IncidentBridgeEnv(base_url=SPACE_URL)
+        await env.connect()
 
     try:
         for task_id in TASK_IDS:

@@ -2,25 +2,26 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
-import sys
 import textwrap
 from typing import Any, Dict, List
 
 from openai import OpenAI
 
-from incident_bridge_env import IncidentBridgeAction, IncidentBridgeEnv
+try:
+    from incident_bridge_env import IncidentBridgeAction
+    from incident_bridge_env.server.incident_bridge_env_environment import (
+        IncidentBridgeEnvironment,
+    )
+except ImportError:
+    from models import IncidentBridgeAction
+    from server.incident_bridge_env_environment import IncidentBridgeEnvironment
 
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 HF_TOKEN = os.getenv("HF_TOKEN")
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
-SPACE_URL = os.getenv(
-    "OPENENV_SPACE_URL",
-    "https://aviralgarg-incident-bridge-env.hf.space",
-)
 
 BENCHMARK = "incident_bridge_env"
 TASK_IDS = [
@@ -205,33 +206,33 @@ def generate_messages(
     return normalize_messages(task_id, diagnosis, update)
 
 
-async def run_step(
-    env: IncidentBridgeEnv,
+def run_step(
+    env: IncidentBridgeEnvironment,
     action: IncidentBridgeAction,
     step_index: int,
     rewards: List[float],
 ) -> tuple[int, float, bool, str | None, Any]:
-    result = await env.step(action)
-    reward = float(result.reward or 0.0)
+    observation = env.step(action)
+    reward = float(observation.reward or 0.0)
     rewards.append(reward)
     log_step(
         step=step_index,
         action=compact_action(action.model_dump()),
         reward=reward,
-        done=result.done,
-        error=result.observation.last_action_error,
+        done=observation.done,
+        error=observation.last_action_error,
     )
     return (
         step_index + 1,
         reward,
-        result.done,
-        result.observation.last_action_error,
-        result,
+        observation.done,
+        observation.last_action_error,
+        observation,
     )
 
 
-async def run_task(
-    env: IncidentBridgeEnv,
+def run_task(
+    env: IncidentBridgeEnvironment,
     client: OpenAI,
     task_id: str,
 ) -> None:
@@ -241,17 +242,15 @@ async def run_task(
     score = 0.0
     success = False
 
-    result = await env.reset(task_id=task_id)
-    observation = result.observation
+    observation = env.reset(task_id=task_id)
     log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
 
     try:
         artifact_texts: List[str] = []
         for artifact_id in observation.available_artifacts:
             action = IncidentBridgeAction(action_type="open_artifact", artifact_id=artifact_id)
-            step_index, _, done, _, result = await run_step(env, action, step_index, rewards)
+            step_index, _, done, _, observation = run_step(env, action, step_index, rewards)
             steps_taken += 1
-            observation = result.observation
             if observation.active_artifact_title and observation.active_artifact_content:
                 artifact_texts.append(
                     f"{observation.active_artifact_title}: {observation.active_artifact_content}"
@@ -259,7 +258,7 @@ async def run_task(
             if done:
                 break
 
-        if not result.done:
+        if not observation.done:
             context = "\n\n".join(artifact_texts)
             severity, mitigation_id = infer_plan_from_context(context)
             diagnosis, update = generate_messages(
@@ -281,45 +280,30 @@ async def run_task(
             ]
 
             for action in planned_actions:
-                step_index, _, _, _, result = await run_step(env, action, step_index, rewards)
+                step_index, _, _, _, observation = run_step(env, action, step_index, rewards)
                 steps_taken += 1
-                observation = result.observation
-                if result.done:
+                if observation.done:
                     break
 
-        score = float(result.observation.score)
+        score = float(observation.score)
         success = score >= SUCCESS_SCORE_THRESHOLD
     finally:
         log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
 
 
-async def main() -> None:
+def main() -> None:
     if not HF_TOKEN:
         raise ValueError("HF_TOKEN environment variable is required")
 
     client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
-    env: IncidentBridgeEnv
-
-    if LOCAL_IMAGE_NAME:
-        try:
-            env = await IncidentBridgeEnv.from_docker_image(LOCAL_IMAGE_NAME)
-        except Exception as exc:
-            print(
-                f"Local image startup failed for {LOCAL_IMAGE_NAME}: {exc}. Falling back to {SPACE_URL}.",
-                file=sys.stderr,
-            )
-            env = IncidentBridgeEnv(base_url=SPACE_URL)
-            await env.connect()
-    else:
-        env = IncidentBridgeEnv(base_url=SPACE_URL)
-        await env.connect()
+    env = IncidentBridgeEnvironment()
 
     try:
         for task_id in TASK_IDS:
-            await run_task(env, client, task_id)
+            run_task(env, client, task_id)
     finally:
-        await env.close()
+        env.close()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
